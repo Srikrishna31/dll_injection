@@ -1,3 +1,4 @@
+use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::{core::*, Win32::UI::WindowsAndMessaging::MessageBoxA};
 use windows::{Win32::Foundation::*, Win32::System::SystemServices::*};
 /// DLLMain
@@ -17,7 +18,13 @@ extern "system" fn DllMain(dll_module: HINSTANCE, call_reason: u32, _: *mut ()) 
 
 fn attach() {
     unsafe {
-        MessageBoxA(HWND(0), s!("ZOMG!"), s!("hello.dll"), Default::default());
+        let pid = GetCurrentProcessId();
+        MessageBoxA(
+            HWND(0),
+            PCSTR(std::format!("Hello from process: {}!\0", pid).as_ptr()),
+            s!("hello.dll"),
+            Default::default(),
+        );
     };
 }
 

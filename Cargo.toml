@@ -2,7 +2,8 @@
 resolver="2"
 
 members = [
+    "create_window",
     "hello",
-    "hello_runner"
+    "hello_runner",
 ]
 
