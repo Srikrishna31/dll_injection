@@ -42,9 +42,8 @@ fn main() -> Result<()> {
         while GetMessageA(&mut message, HWND(0), 0, 0).into() {
             DispatchMessageA(&message);
         }
-    };
-
-    Ok(())
+        Ok(())
+    }
 }
 
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -52,12 +51,26 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
         match message {
             WM_PAINT => {
                 println!("WM_PAINT");
-                ValidateRect(window, None);
+                let mut msg = String::from("ZOMG!");
+                let mut ps = PAINTSTRUCT::default();
+                let psp = &mut ps as *mut PAINTSTRUCT;
+                let rp = &mut ps.rcPaint as *mut RECT;
+                let hdc = BeginPaint(window, psp);
+                let brush = CreateSolidBrush(COLORREF(0x0000F0F0));
+                FillRect(hdc, &ps.rcPaint, brush);
+                DrawTextA(hdc, msg.as_bytes_mut(), rp, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+                EndPaint(window, &ps);
                 LRESULT(0)
             }
             WM_DESTROY => {
                 println!("WM_DESTROY");
                 PostQuitMessage(0);
+                LRESULT(0)
+            }
+            WM_WINDOWPOSCHANGING => {
+                let data = lparam.0 as *mut WINDOWPOS;
+                let data = data.as_mut().unwrap();
+                data.flags |= SWP_NOSIZE | SWP_NOMOVE;
                 LRESULT(0)
             }
             _ => DefWindowProcA(window, message, wparam, lparam),
