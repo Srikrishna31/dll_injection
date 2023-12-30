@@ -1,6 +1,7 @@
 use windows::{
     core::*,
     Win32::Foundation::*,
+    Win32::Graphics::Gdi::ValidateRect,
     Win32::System::LibraryLoader::{GetModuleHandleA, LoadLibraryA},
     Win32::UI::WindowsAndMessaging::*,
 };
@@ -53,6 +54,11 @@ fn main() -> Result<()> {
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         match message {
+            WM_PAINT => {
+                println!("WM_PAINT");
+                ValidateRect(window, None);
+                LRESULT(0)
+            }
             WM_DESTROY => {
                 println!("WM_DESTROY");
                 PostQuitMessage(0);

@@ -1,17 +1,19 @@
-use std::io::ErrorKind;
+use std::io::{Error, ErrorKind, Result};
 use std::mem::{transmute, MaybeUninit};
-use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DrawTextA, EndPaint, FillRect, DT_CENTER, DT_SINGLELINE,
-    DT_VCENTER, PAINTSTRUCT,
+use windows::Win32::{
+    Foundation::{BOOL, COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
+    Graphics::Gdi::{
+        BeginPaint, CreateSolidBrush, DrawTextA, EndPaint, FillRect, DT_CENTER, DT_SINGLELINE,
+        DT_VCENTER, PAINTSTRUCT,
+    },
+    System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH},
+    System::Threading::GetCurrentProcessId,
+    UI::WindowsAndMessaging::{
+        CallWindowProcW, DefWindowProcA, EnumWindows, GetWindow, GetWindowThreadProcessId,
+        IsWindowVisible, SetWindowLongPtrW, GWLP_WNDPROC, GW_OWNER, SWP_NOMOVE, SWP_NOSIZE,
+        WINDOWPOS, WM_NCDESTROY, WM_PAINT, WM_WINDOWPOSCHANGING, WNDPROC,
+    },
 };
-use windows::Win32::System::Threading::GetCurrentProcessId;
-use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, DefWindowProcA, EnumWindows, GetWindow, GetWindowThreadProcessId,
-    IsWindowVisible, SetWindowLongPtrW, GWLP_WNDPROC, GW_OWNER, SWP_NOMOVE, SWP_NOSIZE, WINDOWPOS,
-    WM_NCDESTROY, WM_PAINT, WM_WINDOWPOSCHANGING, WNDPROC,
-};
-use windows::{core::*, Win32::UI::WindowsAndMessaging::MessageBoxA};
-use windows::{Win32::Foundation::*, Win32::System::SystemServices::*};
 
 /// DLLMain
 /// Whenever Windows loads a DLL, it checks to see if it exports a function named `DllMain`. If so, the operating sytem
@@ -22,31 +24,41 @@ extern "system" fn DllMain(dll_module: HINSTANCE, call_reason: u32, _: *mut ()) 
     match call_reason {
         DLL_PROCESS_ATTACH => attach(),
         DLL_PROCESS_DETACH => detach(),
-        _ => (),
+        _ => true,
     }
-
-    true
 }
 
 static mut PREV_WNDPROC: WNDPROC = None;
 
-fn attach() {
+fn attach() -> bool {
     unsafe {
-        let handle = find_window_by_pid(GetCurrentProcessId()).unwrap();
-        let result = SetWindowLongPtrW(handle, GWLP_WNDPROC, wnd_proc as isize);
-        PREV_WNDPROC = transmute::<isize, WNDPROC>(result);
+        match find_window_by_pid(GetCurrentProcessId()) {
+            Ok(handle) => {
+                let result = SetWindowLongPtrW(handle, GWLP_WNDPROC, wnd_proc as isize);
+                PREV_WNDPROC = transmute::<isize, WNDPROC>(result);
+                return true;
+            }
+            Err(e) => println!("Error attaching hello.dll: {:?}", e),
+        }
     };
+    false
 }
 
-fn detach() {
+fn detach() -> bool {
     unsafe {
-        let handle = find_window_by_pid(GetCurrentProcessId()).unwrap();
-        SetWindowLongPtrW(
-            handle,
-            GWLP_WNDPROC,
-            transmute::<WNDPROC, isize>(PREV_WNDPROC),
-        );
+        match find_window_by_pid(GetCurrentProcessId()) {
+            Ok(handle) => {
+                SetWindowLongPtrW(
+                    handle,
+                    GWLP_WNDPROC,
+                    transmute::<WNDPROC, isize>(PREV_WNDPROC),
+                );
+                return true;
+            }
+            Err(e) => println!("Error detaching hello.dll: {:?}", e),
+        }
     };
+    false
 }
 
 extern "system" fn wnd_proc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -71,12 +83,14 @@ extern "system" fn wnd_proc(window: HWND, message: u32, wparam: WPARAM, lparam: 
                 return LRESULT(0);
             }
             WM_WINDOWPOSCHANGING => {
+                println!("WM_WINDOWPOSCHANGING");
                 let data = lparam.0 as *mut WINDOWPOS;
                 let data = data.as_mut().unwrap();
                 data.flags |= SWP_NOSIZE | SWP_NOMOVE;
                 return LRESULT(0);
             }
             WM_NCDESTROY => {
+                println!("WM_NCDESTROY");
                 let result = transmute::<WNDPROC, isize>(PREV_WNDPROC);
                 SetWindowLongPtrW(window, GWLP_WNDPROC, result);
                 return DefWindowProcA(window, message, wparam, lparam);
@@ -88,22 +102,21 @@ extern "system" fn wnd_proc(window: HWND, message: u32, wparam: WPARAM, lparam: 
 }
 
 fn find_window_by_pid(pid: u32) -> Result<HWND> {
-    let mut data = EnumWindowsData {
+    let mut data = MaybeUninit::new(EnumWindowsData {
         wanted_pid: pid,
         handle: HWND::default(),
         found: false,
-    };
-    unsafe {
+    });
+    let data = unsafe {
         EnumWindows(
             Some(enum_windows_callback),
-            LPARAM(&mut data as *mut EnumWindowsData as isize),
+            // LPARAM(&mut data as *mut EnumWindowsData as isize),
+            LPARAM(data.as_mut_ptr() as isize),
         )?;
+        data.assume_init()
     };
     if !data.found {
-        return Err(Error::new(
-            HRESULT(-1),
-            HSTRING::from("Can't find the window!"),
-        ));
+        return Err(Error::new(ErrorKind::NotFound, "Can't find the window!"));
     }
 
     Ok(data.handle)
