@@ -4,6 +4,7 @@ resolver="2"
 members = [
     "create_window",
     "hello",
+    "hello_inject",
     "hello_runner",
 ]
 

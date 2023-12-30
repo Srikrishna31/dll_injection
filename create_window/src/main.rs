@@ -40,7 +40,7 @@ fn main() -> Result<()> {
             None,
         );
 
-        LoadLibraryA(PCSTR("hello.dll\0".as_ptr()))?;
+        // LoadLibraryA(PCSTR("hello.dll\0".as_ptr()))?;
 
         let mut message = MSG::default();
 
